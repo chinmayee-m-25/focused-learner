@@ -1,0 +1,79 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Exo+2:wght@300;400&display=swap');
+  .logo-root{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1rem;gap:0}
+  .logo-scene{position:relative;width:180px;height:180px;display:flex;align-items:center;justify-content:center}
+  .ring{position:absolute;border-radius:50%;border:2px solid transparent;animation:spin 6s linear infinite}
+  .ring1{width:160px;height:160px;border-top-color:#00d4ff;border-right-color:#00d4ff33;animation-duration:5s}
+  .ring2{width:130px;height:130px;border-bottom-color:#0099cc;border-left-color:#0099cc33;animation-duration:7s;animation-direction:reverse}
+  .ring3{width:100px;height:100px;border-top-color:#00ffcc55;border-right-color:#00ffcc;animation-duration:4s}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .orb{width:80px;height:80px;border-radius:50%;background:radial-gradient(circle at 35% 35%, #1a6aff, #003388 60%, #001155);display:flex;align-items:center;justify-content:center;position:relative;animation:pulse 3s ease-in-out infinite;box-shadow:0 0 20px #00aaff66,0 0 40px #0055ff33}
+  @keyframes pulse{0%,100%{box-shadow:0 0 20px #00aaff66,0 0 40px #0055ff33;transform:scale(1)}50%{box-shadow:0 0 30px #00ccff99,0 0 60px #0077ff55;transform:scale(1.04)}}
+  .brain-svg{width:44px;height:44px}
+  .dot{position:absolute;width:8px;height:8px;border-radius:50%;background:#00d4ff;animation:orbit1 5s linear infinite}
+  .dot2{width:6px;height:6px;background:#00ffaa;animation:orbit2 7s linear infinite reverse}
+  .dot3{width:5px;height:5px;background:#66aaff;animation:orbit3 4s linear infinite}
+  @keyframes orbit1{from{transform:rotate(0deg) translateX(80px) rotate(0deg)}to{transform:rotate(360deg) translateX(80px) rotate(-360deg)}}
+  @keyframes orbit2{from{transform:rotate(60deg) translateX(65px) rotate(-60deg)}to{transform:rotate(420deg) translateX(65px) rotate(-420deg)}}
+  @keyframes orbit3{from{transform:rotate(180deg) translateX(50px) rotate(-180deg)}to{transform:rotate(540deg) translateX(50px) rotate(-540deg)}}
+  .wordmark{display:flex;flex-direction:column;align-items:center;margin-top:1.5rem}
+  .title-wrap{overflow:hidden}
+  .brand-title{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:36px;letter-spacing:2px;background:linear-gradient(90deg,#00d4ff,#0088ff,#00ffcc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:shimmer 4s ease-in-out infinite;white-space:nowrap}
+  @keyframes shimmer{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+  .brand-sub{font-family:'Exo 2',sans-serif;font-weight:300;font-size:13px;letter-spacing:4px;text-transform:uppercase;color:#7ab8d4;margin-top:4px;animation:fadeIn 1.5s ease-out}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+  .tagline-bar{display:flex;align-items:center;gap:8px;margin-top:12px;opacity:.7}
+  .bar{width:30px;height:1px;background:linear-gradient(90deg,transparent,#00d4ff)}
+  .bar2{background:linear-gradient(90deg,#00d4ff,transparent)}
+  .tagline{font-family:'Exo 2',sans-serif;font-size:11px;letter-spacing:2px;color:#5599bb;text-transform:uppercase}
+  .wave-line{margin-top:16px;width:200px;height:24px}
+  .wave-path{stroke:#00d4ff44;fill:none;stroke-width:1.5;stroke-dasharray:4 2}
+  .wave-path-glow{stroke:#00d4ff;fill:none;stroke-width:1;stroke-dasharray:300;stroke-dashoffset:300;animation:drawWave 2s ease-out 0.5s forwards}
+  @keyframes drawWave{to{stroke-dashoffset:0}}
+</style>
+<div class="logo-root">
+  <h2 class="sr-only">Focused Learner — animated logo with rotating orbital rings and pulsing brain core</h2>
+  <div class="logo-scene">
+    <div class="ring ring1"></div>
+    <div class="ring ring2"></div>
+    <div class="ring ring3"></div>
+    <div class="dot"></div>
+    <div class="dot dot2"></div>
+    <div class="dot dot3"></div>
+    <div class="orb">
+      <svg class="brain-svg" viewBox="0 0 44 44" fill="none">
+        <ellipse cx="22" cy="20" rx="13" ry="11" fill="#005599" opacity="0.6"/>
+        <path d="M22 10 C16 10 11 14 11 19 C11 21 12 23 14 24 C13 26 14 28 16 29 C17 31 19 32 22 32 C25 32 27 31 28 29 C30 28 31 26 30 24 C32 23 33 21 33 19 C33 14 28 10 22 10Z" fill="#0077cc" stroke="#00aaff" stroke-width="0.8"/>
+        <path d="M22 10 C22 15 19 18 17 21 C15 24 16 28 18 30" stroke="#00d4ff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <path d="M22 10 C22 15 25 18 27 21 C29 24 28 28 26 30" stroke="#00d4ff" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.8"/>
+        <path d="M15 19 C18 17 22 17 26 17" stroke="#44ccff" stroke-width="1" fill="none" stroke-linecap="round"/>
+        <path d="M14 22 C17 21 22 21 28 21" stroke="#44ccff" stroke-width="0.8" fill="none" stroke-linecap="round" opacity="0.7"/>
+        <circle cx="22" cy="19" r="2.5" fill="#00d4ff" opacity="0.9"/>
+        <circle cx="22" cy="19" r="1.5" fill="#ffffff" opacity="0.9"/>
+        <circle cx="22" cy="19" r="1" fill="#00aaff"/>
+        <circle cx="17" cy="16" r="1" fill="#00d4ff" opacity="0.7"/>
+        <circle cx="27" cy="16" r="1" fill="#00d4ff" opacity="0.7"/>
+        <circle cx="15" cy="22" r="0.8" fill="#44ccff" opacity="0.6"/>
+        <circle cx="29" cy="22" r="0.8" fill="#44ccff" opacity="0.6"/>
+        <path d="M20 35 L24 35" stroke="#00d4ff" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M18 37 L26 37" stroke="#0088cc" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+      </svg>
+    </div>
+  </div>
+  <div class="wordmark">
+    <div class="title-wrap">
+      <div class="brand-title">Focused Learner</div>
+    </div>
+    <div class="brand-sub">AI · Wellness · Learning</div>
+    <div class="tagline-bar">
+      <div class="bar"></div>
+      <div class="tagline">Powered by Intelligence</div>
+      <div class="bar bar2"></div>
+    </div>
+    <svg class="wave-line" viewBox="0 0 200 24">
+      <path class="wave-path" d="M0 12 Q25 4 50 12 Q75 20 100 12 Q125 4 150 12 Q175 20 200 12"/>
+      <path class="wave-path-glow" d="M0 12 Q25 4 50 12 Q75 20 100 12 Q125 4 150 12 Q175 20 200 12"/>
+    </svg>
+  </div>
+</div>

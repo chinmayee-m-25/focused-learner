@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 220px;
+      padding: 15px;
+      text-align: center;
+      font-family: Arial;
+      background: #1a1a2e;
+      color: white;
+    }
+    h3 { color: #4CAF50; margin: 0 0 5px 0; }
+    p { color: gray; font-size: 12px; margin: 0 0 12px 0; }
+    button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    #start { background: #4CAF50; color: white; }
+    #stop { background: #f44336; color: white; }
+    #statusBox {
+      background: #333;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h3>🎓 FocusedLearner</h3>
+  <p>Stay focused while studying!</p>
+
+  <button id="start">▶️ START Study Mode</button>
+  <button id="stop">⏹️ STOP Study Mode</button>
+
+  <div id="statusBox">Status: OFF 🔴</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
