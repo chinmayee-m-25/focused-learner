@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const ANTHROPIC_KEY = "j4WMT7tBtDSzRFV16CKBqaxyTfCXz98h";
+const ANTHROPIC_KEY = "EFCHB4BrGDH1PdSPjUoYJ1CBH2P7PNfF";
 const ASSEMBLY_KEY = "19cce2de51cf4dbe8de282cfba9ff993";
 
 export default function AIAssistant({ topicTitle }) {
@@ -16,9 +16,14 @@ export default function AIAssistant({ topicTitle }) {
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [liveTranslated, setLiveTranslated] = useState("");
+  const [liveOriginal, setLiveOriginal] = useState("");
+  const [assemblyStatus, setAssemblyStatus] = useState("");
   const chatEndRef = useRef(null);
   const recognitionRef = useRef(null);
   const translateTimerRef = useRef(null);
+  const socketRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const streamRef = useRef(null);
 
   const languages = {
     "Telugu": "te", "Hindi": "hi", "Tamil": "ta",
@@ -31,6 +36,13 @@ export default function AIAssistant({ topicTitle }) {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopAllRecording();
+    };
+  }, []);
 
   const translateText = async (inputText) => {
     if (!inputText.trim()) return "";
@@ -74,32 +86,154 @@ export default function AIAssistant({ topicTitle }) {
     else alert("Invalid YouTube URL! Example: https://www.youtube.com/watch?v=xxxxx");
   };
 
-  const startLiveTranslation = () => {
+  const stopAllRecording = () => {
+    // Stop AssemblyAI WebSocket
+    if (socketRef.current) {
+      try { socketRef.current.close(); } catch (e) {}
+      socketRef.current = null;
+    }
+    // Stop MediaRecorder
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+      mediaRecorderRef.current = null;
+    }
+    // Stop microphone stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    // Stop browser SpeechRecognition fallback
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+      recognitionRef.current = null;
+    }
+    clearTimeout(translateTimerRef.current);
+  };
+
+  // ── AssemblyAI real-time transcription ──────────────────────────────────
+  const startAssemblyAI = async () => {
+    setAssemblyStatus("🔄 Connecting to AssemblyAI...");
+    try {
+      // 1. Get a temporary auth token from AssemblyAI
+      const tokenRes = await fetch("https://api.assemblyai.com/v2/realtime/token", {
+        method: "POST",
+        headers: {
+          "Authorization": ASSEMBLY_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ expires_in: 3600 })
+      });
+
+      if (!tokenRes.ok) throw new Error("Token fetch failed: " + tokenRes.status);
+      const { token } = await tokenRes.json();
+
+      // 2. Open WebSocket
+      const ws = new WebSocket(`wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${token}`);
+      socketRef.current = ws;
+
+      ws.onopen = () => {
+        setAssemblyStatus("✅ Connected! Speak now...");
+      };
+
+      ws.onmessage = async (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.message_type === "FinalTranscript" && msg.text) {
+          setLiveOriginal(msg.text);
+          const translated = await translateText(msg.text);
+          if (translated) setLiveTranslated(translated);
+        } else if (msg.message_type === "PartialTranscript" && msg.text) {
+          setLiveOriginal("..." + msg.text);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error("AssemblyAI WS error:", err);
+        setAssemblyStatus("❌ AssemblyAI error. Falling back to browser...");
+        stopAllRecording();
+        startBrowserFallback();
+      };
+
+      ws.onclose = () => {
+        setAssemblyStatus("");
+      };
+
+      // 3. Capture mic → PCM16 via ScriptProcessorNode → send to WS
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const float32 = e.inputBuffer.getChannelData(0);
+        // Convert Float32 → PCM16
+        const pcm16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          pcm16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32767)));
+        }
+        ws.send(pcm16.buffer);
+      };
+
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+      setIsListening(true);
+
+    } catch (err) {
+      console.error("AssemblyAI startup error:", err);
+      setAssemblyStatus("⚠️ AssemblyAI unavailable. Using browser mic...");
+      startBrowserFallback();
+    }
+  };
+
+  // ── Browser SpeechRecognition fallback ──────────────────────────────────
+  const startBrowserFallback = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { alert("Speech recognition not supported!"); return; }
+    if (!SpeechRecognition) {
+      alert("Speech recognition not supported in this browser!");
+      setIsListening(false);
+      return;
+    }
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
     recognitionRef.current = recognition;
+
     recognition.onresult = (event) => {
       const transcript = Array.from(event.results).map(r => r[0].transcript).join(" ");
+      setLiveOriginal(transcript);
       clearTimeout(translateTimerRef.current);
       translateTimerRef.current = setTimeout(async () => {
         const result = await translateText(transcript);
         if (result) setLiveTranslated(result);
       }, 800);
     };
+
+    recognition.onerror = (e) => {
+      console.error("SpeechRecognition error:", e);
+      setAssemblyStatus("❌ Mic error: " + e.error);
+    };
+
     recognition.start();
     setIsListening(true);
+    setAssemblyStatus("🎤 Browser mic active");
+  };
+
+  const startLiveTranslation = () => {
+    setLiveTranslated("");
+    setLiveOriginal("");
+    startAssemblyAI();
   };
 
   const stopLiveTranslation = () => {
-    recognitionRef.current?.stop();
+    stopAllRecording();
     setIsListening(false);
-    setLiveTranslated("");
+    setAssemblyStatus("");
   };
 
+  // ── Claude AI doubt answering ────────────────────────────────────────────
   const handleDoubt = async () => {
     if (!doubt.trim()) return;
     const userMsg = doubt.trim();
@@ -124,11 +258,21 @@ export default function AIAssistant({ topicTitle }) {
           }]
         })
       });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData?.error?.message || "API error " + response.status);
+      }
+
       const data = await response.json();
       const answer = data.content[0].text;
       setMessages(prev => [...prev, { role: "ai", text: answer }]);
     } catch (e) {
-      setMessages(prev => [...prev, { role: "ai", text: `Great question about "${topicTitle}"! Focus on the video and take notes. You've got this! 🚀` }]);
+      console.error("Claude API error:", e);
+      setMessages(prev => [...prev, {
+        role: "ai",
+        text: `Sorry, I ran into an issue: ${e.message}. Please check your API key or try again shortly. 🙏`
+      }]);
     }
     setLoading(false);
   };
@@ -163,6 +307,7 @@ export default function AIAssistant({ topicTitle }) {
           zIndex: 9999, display: "flex", flexDirection: "column",
           overflow: "hidden", border: "1px solid #333"
         }}>
+          {/* Header */}
           <div style={{
             background: "linear-gradient(135deg, #e53935, #b71c1c)",
             padding: "14px 16px", display: "flex",
@@ -178,12 +323,14 @@ export default function AIAssistant({ topicTitle }) {
             <button onClick={() => setIsOpen(false)} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "white", borderRadius: "50%", width: "28px", height: "28px", cursor: "pointer", fontSize: "14px", fontWeight: "bold" }}>✕</button>
           </div>
 
+          {/* Tabs */}
           <div style={{ display: "flex", background: "#e53935", padding: "6px 10px", gap: "4px" }}>
             <button onClick={() => setActiveTab("youtube")} style={tabStyle("youtube")}>📺 YouTube</button>
             <button onClick={() => setActiveTab("text")} style={tabStyle("text")}>🌐 Text</button>
             <button onClick={() => setActiveTab("doubt")} style={tabStyle("doubt")}>💬 Doubt</button>
           </div>
 
+          {/* ── YouTube Tab ── */}
           {activeTab === "youtube" && (
             <div style={{ flex: 1, padding: "15px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
               <p style={{ color: "#f44336", fontSize: "13px", margin: 0, fontWeight: "bold", textAlign: "center" }}>📺 YouTube Subtitle Translator</p>
@@ -203,15 +350,30 @@ export default function AIAssistant({ topicTitle }) {
               {videoLoaded && (
                 <iframe width="100%" height="170" src={getEmbedUrl(youtubeUrl)} frameBorder="0" allowFullScreen style={{ borderRadius: "8px" }} />
               )}
+
+              {/* AssemblyAI Live Translation */}
               <div style={{ borderTop: "1px solid #333", paddingTop: "10px" }}>
                 <p style={{ color: "#aaa", fontSize: "12px", margin: "0 0 4px", textAlign: "center" }}>🎤 Live Subtitle Translation</p>
-                <p style={{ color: "#888", fontSize: "11px", margin: "0 0 8px", textAlign: "center", lineHeight: "1.4" }}>Click start → speak what the video says → translation appears!</p>
-                <button onClick={isListening ? stopLiveTranslation : startLiveTranslation}
+                <p style={{ color: "#888", fontSize: "11px", margin: "0 0 8px", textAlign: "center", lineHeight: "1.4" }}>
+                  Powered by AssemblyAI — speak what the video says!
+                </p>
+                {assemblyStatus && (
+                  <p style={{ color: "#FFD700", fontSize: "11px", textAlign: "center", margin: "0 0 6px" }}>{assemblyStatus}</p>
+                )}
+                <button
+                  onClick={isListening ? stopLiveTranslation : startLiveTranslation}
                   style={{ width: "100%", padding: "12px", background: isListening ? "#f44336" : "#4CAF50", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "bold" }}>
                   {isListening ? "⏹ Stop Translation" : "🎤 Start Live Translation"}
                 </button>
+
+                {liveOriginal && (
+                  <div style={{ background: "#1e2a3a", padding: "8px 10px", borderRadius: "8px", marginTop: "8px", border: "1px solid #2196F3" }}>
+                    <p style={{ color: "#2196F3", margin: "0 0 2px", fontSize: "10px", fontWeight: "bold" }}>🔊 Heard:</p>
+                    <p style={{ color: "#ccc", margin: 0, fontSize: "12px" }}>{liveOriginal}</p>
+                  </div>
+                )}
                 {liveTranslated && (
-                  <div style={{ background: "#0d3b1e", padding: "10px", borderRadius: "8px", marginTop: "8px", border: "1px solid #4CAF50" }}>
+                  <div style={{ background: "#0d3b1e", padding: "10px", borderRadius: "8px", marginTop: "6px", border: "1px solid #4CAF50" }}>
                     <p style={{ color: "#4CAF50", margin: "0 0 4px", fontSize: "11px", fontWeight: "bold" }}>✅ {language}:</p>
                     <p style={{ color: "white", margin: 0, fontSize: "13px", lineHeight: "1.5" }}>{liveTranslated}</p>
                   </div>
@@ -220,6 +382,7 @@ export default function AIAssistant({ topicTitle }) {
             </div>
           )}
 
+          {/* ── Text Tab ── */}
           {activeTab === "text" && (
             <div style={{ flex: 1, padding: "15px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
               <p style={{ color: "#4CAF50", fontSize: "12px", margin: 0, fontWeight: "bold" }}>✅ Free Translation — 15 Languages!</p>
@@ -248,6 +411,7 @@ export default function AIAssistant({ topicTitle }) {
             </div>
           )}
 
+          {/* ── Doubt Tab ── */}
           {activeTab === "doubt" && (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ flex: 1, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
