@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const ANTHROPIC_KEY = "EFCHB4BrGDH1PdSPjUoYJ1CBH2P7PNfF";
+const GROQ_KEY = "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";
 const ASSEMBLY_KEY = "19cce2de51cf4dbe8de282cfba9ff993";
 
 export default function AIAssistant({ topicTitle }) {
@@ -233,7 +233,7 @@ export default function AIAssistant({ topicTitle }) {
     setAssemblyStatus("");
   };
 
-  // ── Claude AI doubt answering ────────────────────────────────────────────
+  // ── Groq AI doubt answering ────────────────────────────────────────────
   const handleDoubt = async () => {
     if (!doubt.trim()) return;
     const userMsg = doubt.trim();
@@ -241,21 +241,22 @@ export default function AIAssistant({ topicTitle }) {
     setDoubt("");
     setLoading(true);
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
+          "Authorization": `Bearer ${GROQ_KEY}`
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "llama3-8b-8192",
           max_tokens: 500,
-          messages: [{
-            role: "user",
-            content: `You are a helpful AI teacher. The student is learning about "${topicTitle}". Answer this question simply and encouragingly in 2-3 sentences: "${userMsg}"`
-          }]
+          messages: [
+            {
+              role: "system",
+              content: `You are a helpful AI teacher. The student is learning about "${topicTitle}". Answer questions simply and encouragingly in 2-3 sentences.`
+            },
+            { role: "user", content: userMsg }
+          ]
         })
       });
 
@@ -265,7 +266,7 @@ export default function AIAssistant({ topicTitle }) {
       }
 
       const data = await response.json();
-      const answer = data.content[0].text;
+      const answer = data.choices[0].message.content;
       setMessages(prev => [...prev, { role: "ai", text: answer }]);
     } catch (e) {
       console.error("Claude API error:", e);
