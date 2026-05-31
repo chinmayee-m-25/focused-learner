@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const GROQ_API_KEY = "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";
-
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "";
 const LANGUAGES = {
   "Telugu": "te", "Hindi": "hi", "Tamil": "ta",
   "Kannada": "kn", "Malayalam": "ml", "Bengali": "bn",
