@@ -2,6 +2,30 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
 
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbyrrkreaVtcaNjrjl_ZIlMnbgCBxosj29ge1UEwvL7bO3nZvECu00L_7Pq4mqsHKK-E/exec";
+
+// Log user to Google Sheet
+const trackUser = async (name, email) => {
+  try {
+    const now = new Date();
+    const device = navigator.userAgent.includes("Mobile") ? "📱 Mobile" : "💻 Desktop";
+    await fetch(SHEET_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name || "Unknown",
+        email: email || "Unknown",
+        time: now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+        date: now.toLocaleDateString("en-IN"),
+        device: device,
+      }),
+    });
+  } catch (e) {
+    console.warn("Tracking failed:", e);
+  }
+};
+
 export default function Login() {
   const [tab, setTab] = useState('signin');
   const [signinEmail, setSigninEmail] = useState('');
@@ -80,14 +104,22 @@ export default function Login() {
       const data = await res.json();
       if (res.ok) {
         localStorage.setItem('token', data.token);
+        localStorage.setItem('userEmail', signinEmail);
+        localStorage.setItem('userName', data.name || signinEmail.split('@')[0]);
+        // ── Track login to Google Sheet ──
+        await trackUser(data.name || signinEmail.split('@')[0], signinEmail);
         showMsg('Welcome back! Redirecting...', 'success');
         setTimeout(() => navigate('/dashboard'), 1000);
       } else {
         showMsg(data.message || 'Invalid email or password.', 'error');
       }
     } catch {
-      // If no backend yet, go directly
-      showMsg('Redirecting to dashboard...', 'success');
+      // No backend — track and redirect anyway
+      const name = signinEmail.split('@')[0];
+      localStorage.setItem('userEmail', signinEmail);
+      localStorage.setItem('userName', name);
+      await trackUser(name, signinEmail);
+      showMsg('Welcome! Redirecting...', 'success');
       setTimeout(() => navigate('/dashboard'), 1000);
     }
   };
@@ -104,51 +136,41 @@ export default function Login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: signupName,
-          email: signupEmail,
-          password: signupPass,
-          age: signupAge,
-          gender: signupGender,
-          phone: signupPhone,
-          goal: signupGoal,
+          name: signupName, email: signupEmail, password: signupPass,
+          age: signupAge, gender: signupGender, phone: signupPhone, goal: signupGoal,
         }),
       });
       const data = await res.json();
       if (res.ok) {
+        // ── Track signup to Google Sheet ──
+        await trackUser(signupName + " (NEW)", signupEmail);
         showMsg('Account created! Please sign in.', 'success');
         setTimeout(() => setTab('signin'), 1500);
       } else {
         showMsg(data.message || 'Registration failed.', 'error');
       }
     } catch {
+      // ── Track signup even without backend ──
+      await trackUser(signupName + " (NEW)", signupEmail);
       showMsg('Account created! Please sign in.', 'success');
       setTimeout(() => setTab('signin'), 1500);
     }
   };
 
   const goals = [
-    '🧠 Mental Focus',
-    '💪 Physical Fitness',
-    '😴 Better Sleep',
-    '🥗 Healthy Diet',
-    '😌 Stress Relief',
-    '📚 Daily Learning',
+    '🧠 Mental Focus', '💪 Physical Fitness',
+    '😴 Better Sleep',  '🥗 Healthy Diet',
+    '😌 Stress Relief', '📚 Daily Learning',
   ];
 
   return (
     <div className="lp-wrap">
-      <div className="lp-logo-area">
-        <Logo />
-      </div>
+      <div className="lp-logo-area"><Logo /></div>
 
       <div className="lp-card">
         <div className="lp-tabs">
-          <button className={`lp-tab ${tab === 'signin' ? 'active' : ''}`} onClick={() => setTab('signin')}>
-            Sign In
-          </button>
-          <button className={`lp-tab ${tab === 'signup' ? 'active' : ''}`} onClick={() => setTab('signup')}>
-            Sign Up
-          </button>
+          <button className={`lp-tab ${tab === 'signin' ? 'active' : ''}`} onClick={() => setTab('signin')}>Sign In</button>
+          <button className={`lp-tab ${tab === 'signup' ? 'active' : ''}`} onClick={() => setTab('signup')}>Sign Up</button>
         </div>
 
         {msg.text && <div className={`lp-msg ${msg.type}`}>{msg.text}</div>}
@@ -179,7 +201,6 @@ export default function Login() {
         {/* ── SIGN UP ── */}
         {tab === 'signup' && (
           <>
-            {/* Personal Info */}
             <div className="lp-section-title">👤 Personal Information</div>
             <div className="lp-field">
               <label className="lp-label">Full Name *</label>
@@ -209,7 +230,6 @@ export default function Login() {
                 value={signupPhone} onChange={e => setSignupPhone(e.target.value)} />
             </div>
 
-            {/* Account Info */}
             <div className="lp-section-title">🔐 Account Details</div>
             <div className="lp-field">
               <label className="lp-label">Email Address *</label>
@@ -223,28 +243,29 @@ export default function Login() {
                   value={signupPass} onChange={e => setSignupPass(e.target.value)} />
               </div>
               <div className="lp-field">
-                <label className="lp-label">Confirm Password *</label>
-                <input className="lp-input" type="password" placeholder="Re-enter password"
+                <label className="lp-label">Confirm *</label>
+                <input className="lp-input" type="password" placeholder="Repeat password"
                   value={signupConfirm} onChange={e => setSignupConfirm(e.target.value)} />
               </div>
             </div>
 
-            {/* Wellness Goal */}
-            <div className="lp-section-title">🎯 Your Wellness Goal</div>
+            <div className="lp-section-title">🎯 Your Goal (optional)</div>
             <div className="lp-goal-grid">
               {goals.map(g => (
-                <button key={g} className={`lp-goal-btn ${signupGoal === g ? 'selected' : ''}`}
-                  onClick={() => setSignupGoal(g)}>
+                <button key={g}
+                  className={`lp-goal-btn ${signupGoal === g ? 'selected' : ''}`}
+                  onClick={() => setSignupGoal(signupGoal === g ? '' : g)}>
                   {g}
                 </button>
               ))}
             </div>
 
-            <br />
-            <button className="lp-btn" onClick={handleSignUp}>Create Account →</button>
+            <button className="lp-btn" style={{ marginTop: "1.2rem" }} onClick={handleSignUp}>
+              Create Account →
+            </button>
             <div className="lp-bottom">
               Already have an account?{' '}
-              <span onClick={() => setTab('signin')}>Sign in here</span>
+              <span onClick={() => setTab('signin')}>Sign in</span>
             </div>
           </>
         )}

@@ -1,117 +1,138 @@
 import { useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
 
+const MODEL_SOURCES = [
+  "/models",
+  "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights",
+  "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights",
+];
+
+function getEAR(eye) {
+  if (!eye || eye.length < 6) return 0.3;
+  const A = Math.hypot(eye[1].x - eye[5].x, eye[1].y - eye[5].y);
+  const B = Math.hypot(eye[2].x - eye[4].x, eye[2].y - eye[4].y);
+  const C = Math.hypot(eye[0].x - eye[3].x, eye[0].y - eye[3].y);
+  return C === 0 ? 0 : (A + B) / (2 * C);
+}
+
 export default function SleepDetector({ onSleeping }) {
-  const videoRef        = useRef(null);
-  const intervalRef     = useRef(null);
-  const countRef        = useRef(null);
-  const noFaceTime      = useRef(null);
-  const eyesClosedTime  = useRef(null);
+  const videoRef       = useRef(null);
+  const intervalRef    = useRef(null);
+  const countRef       = useRef(null);
+  const noFaceTime     = useRef(null);
+  const eyesClosedTime = useRef(null);
+  const alarmRef       = useRef(null);
 
-  const [status,     setStatus]     = useState("Detector off");
-  const [isActive,   setIsActive]   = useState(false);
-  const [countdown,  setCountdown]  = useState(10);
-  const [modelsReady,setModelsReady]= useState(false);
-  const [loadingMsg, setLoadingMsg] = useState("Loading models…");
+  const [status,      setStatus]      = useState("Detector off");
+  const [isActive,    setIsActive]    = useState(false);
+  const [countdown,   setCountdown]   = useState(10);
+  const [modelsReady, setModelsReady] = useState(false);
+  const [loadingMsg,  setLoadingMsg]  = useState("Loading models…");
 
-  const LIMIT = 10000; // 10 seconds
+  const LIMIT = 10000; // 10 seconds eyes closed before alarm
 
-  // ── 1. Load face-api models ─────────────────────────────────────────────
+  // ── 1. Load models ────────────────────────────────────────────────────────
   useEffect(() => {
-    const MODEL_URL = "/models";
     async function load() {
-      try {
-        setLoadingMsg("Loading face model…");
-        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-        setLoadingMsg("Loading landmark model…");
-        await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
-        setModelsReady(true);
-        setLoadingMsg("");
-      } catch (e) {
-        setLoadingMsg("❌ Models failed. Check /public/models");
-        console.error(e);
+      for (const source of MODEL_SOURCES) {
+        try {
+          setLoadingMsg("Loading face model…");
+          await faceapi.nets.tinyFaceDetector.loadFromUri(source);
+          setLoadingMsg("Loading landmark model…");
+          await faceapi.nets.faceLandmark68TinyNet.loadFromUri(source);
+          setModelsReady(true);
+          setLoadingMsg("");
+          console.log("✅ SleepDetector models loaded from:", source);
+          return;
+        } catch (e) {
+          console.warn("Failed from", source, e.message);
+          try { faceapi.nets.tinyFaceDetector.dispose?.(); } catch (_) {}
+          try { faceapi.nets.faceLandmark68TinyNet.dispose?.(); } catch (_) {}
+        }
       }
+      setLoadingMsg("❌ Models failed to load");
     }
     load();
     return () => {
       clearInterval(intervalRef.current);
       clearInterval(countRef.current);
+      stopAlarm();
     };
   }, []);
 
-  // ── 2. Buzzer ────────────────────────────────────────────────────────────
-  const playBuzzer = () => {
+  // ── 2. Alarm sound ────────────────────────────────────────────────────────
+  const playAlarm = () => {
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioContext();
-      ctx.resume().then(() => {
-        for (let i = 0; i < 12; i++) {
-          const osc  = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.type = "sawtooth";
-          osc.frequency.value = i % 2 === 0 ? 1200 : 600;
-          gain.gain.value = 5.0;
-          osc.start(ctx.currentTime + i * 0.25);
-          osc.stop(ctx.currentTime + i * 0.25 + 0.2);
-        }
-      });
-    } catch (e) {}
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      const playBeep = (time) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.4, time);
+        g.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+        o.start(time);
+        o.stop(time + 0.4);
+      };
+      for (let i = 0; i < 5; i++) playBeep(ctx.currentTime + i * 0.5);
+    } catch (e) {
+      console.warn("Alarm sound failed:", e);
+    }
   };
 
-  // ── 3. Countdown ─────────────────────────────────────────────────────────
-  const startCountdown = (sec) => {
-    setCountdown(sec);
+  const stopAlarm = () => {
+    if (alarmRef.current) {
+      clearInterval(alarmRef.current);
+      alarmRef.current = null;
+    }
+  };
+
+  // ── 3. Countdown ──────────────────────────────────────────────────────────
+  const startCountdown = (from) => {
     clearInterval(countRef.current);
+    setCountdown(from);
+    if (from <= 0) return;
+    let val = from;
     countRef.current = setInterval(() => {
-      setCountdown(p => {
-        if (p <= 1) { clearInterval(countRef.current); return 0; }
-        return p - 1;
-      });
+      val -= 1;
+      setCountdown(Math.max(0, val));
+      if (val <= 0) clearInterval(countRef.current);
     }, 1000);
   };
 
-  // ── 4. Trigger alarm ─────────────────────────────────────────────────────
+  // ── 4. Trigger alarm ──────────────────────────────────────────────────────
   const triggerAlarm = (reason) => {
-    setStatus(`😴 ${reason} BUZZER!`);
-    playBuzzer();
-    setTimeout(playBuzzer, 1500);
-    setTimeout(playBuzzer, 3000);
-    onSleeping();
-    noFaceTime.current      = null;
-    eyesClosedTime.current  = null;
-    startCountdown(10);
+    setStatus(`🚨 ${reason}`);
+    clearInterval(intervalRef.current);
+    playAlarm();
+    if (onSleeping) onSleeping();
+    // Restart detection after alarm
+    setTimeout(() => {
+      eyesClosedTime.current = null;
+      noFaceTime.current = null;
+      startCheck();
+    }, 5000);
   };
 
-  // ── 5. EAR (Eye Aspect Ratio) — detects closed eyes accurately ───────────
-  const getEAR = (eye) => {
-    // eye = array of 6 {x,y} points
-    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-    const vertical1 = dist(eye[1], eye[5]);
-    const vertical2 = dist(eye[2], eye[4]);
-    const horizontal = dist(eye[0], eye[3]);
-    return (vertical1 + vertical2) / (2.0 * horizontal);
-  };
-
-  // ── 6. Detection loop using face-api ─────────────────────────────────────
+  // ── 5. Detection loop ─────────────────────────────────────────────────────
   const startCheck = () => {
     clearInterval(intervalRef.current);
     intervalRef.current = setInterval(async () => {
-      if (!videoRef.current || !modelsReady) return;
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return;
 
       const detection = await faceapi
-        .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks(true); // true = use tiny landmark model
+        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }))
+        .withFaceLandmarks(true);
 
       if (!detection) {
-        // No face found
-        eyesClosedTime.current = null;
         if (!noFaceTime.current) noFaceTime.current = Date.now();
         const gone = Date.now() - noFaceTime.current;
         const left = Math.max(0, Math.round((LIMIT - gone) / 1000));
         if (gone >= LIMIT) {
-          triggerAlarm("NOT THERE!");
+          triggerAlarm("No face detected!");
         } else {
           setStatus(`⚠️ No face! ${left}s left!`);
           startCountdown(left);
@@ -119,28 +140,24 @@ export default function SleepDetector({ onSleeping }) {
         return;
       }
 
-      // Face found — check EAR for eye closure
       noFaceTime.current = null;
-      const landmarks  = detection.landmarks;
-      const leftEye    = landmarks.getLeftEye();
-      const rightEye   = landmarks.getRightEye();
-      const leftEAR    = getEAR(leftEye);
-      const rightEAR   = getEAR(rightEye);
-      const avgEAR     = (leftEAR + rightEAR) / 2;
-      const eyesClosed = avgEAR < 0.22; // threshold — lower = more closed
+      const landmarks = detection.landmarks;
+      const leftEye   = landmarks.getLeftEye();
+      const rightEye  = landmarks.getRightEye();
+      const avgEAR    = (getEAR(leftEye) + getEAR(rightEye)) / 2;
+      const eyesClosed = avgEAR < 0.22;
 
       if (eyesClosed) {
         if (!eyesClosedTime.current) eyesClosedTime.current = Date.now();
         const closed = Date.now() - eyesClosedTime.current;
         const left   = Math.max(0, Math.round((LIMIT - closed) / 1000));
         if (closed >= LIMIT) {
-          triggerAlarm("EYES CLOSED!");
+          triggerAlarm("SLEEPING DETECTED!");
         } else {
           setStatus(`😪 Eyes closed! ${left}s!`);
           startCountdown(left);
         }
       } else {
-        // All good
         eyesClosedTime.current = null;
         noFaceTime.current     = null;
         setStatus("👁️ Watching...");
@@ -149,64 +166,60 @@ export default function SleepDetector({ onSleeping }) {
     }, 800);
   };
 
-  // ── 7. Start / Stop camera ───────────────────────────────────────────────
+  // ── 6. Start camera ───────────────────────────────────────────────────────
   const startCamera = async () => {
     if (!modelsReady) {
-      alert("Models still loading, please wait a moment!");
+      alert("Models still loading, please wait!");
       return;
     }
-    try {
-      // Unlock AudioContext
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioContext();
-      await ctx.resume();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      g.gain.value = 0.001;
-      o.start(); o.stop(ctx.currentTime + 0.1);
-    } catch (e) {}
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480, facingMode: "user" }
       });
-      videoRef.current.srcObject = stream;
-      videoRef.current.onloadedmetadata = () => {
-        setIsActive(true);
-        setStatus("👁️ Watching...");
-        noFaceTime.current     = null;
-        eyesClosedTime.current = null;
-        startCountdown(10);
-        startCheck();
-      };
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current.play();
+          setIsActive(true);
+          setStatus("👁️ Watching...");
+          noFaceTime.current     = null;
+          eyesClosedTime.current = null;
+          startCountdown(10);
+          startCheck();
+        };
+      }
     } catch (e) {
-      setStatus("❌ Allow camera!");
-      alert("Please allow camera access!");
+      setStatus(e.name === "NotAllowedError"
+        ? "❌ Camera permission denied"
+        : "❌ Camera unavailable");
     }
   };
 
+  // ── 7. Stop camera ────────────────────────────────────────────────────────
   const stopCamera = () => {
-    if (videoRef.current?.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
-    }
     clearInterval(intervalRef.current);
     clearInterval(countRef.current);
-    noFaceTime.current     = null;
-    eyesClosedTime.current = null;
+    stopAlarm();
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      videoRef.current.srcObject = null;
+    }
     setIsActive(false);
     setStatus("Detector off");
     setCountdown(10);
+    noFaceTime.current     = null;
+    eyesClosedTime.current = null;
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const borderColor = status.includes("😴") ? "red"
-    : status.includes("⚠️") || status.includes("😪") ? "orange"
-    : isActive ? "#4CAF50" : "#555";
+  const borderColor = status.includes("🚨") || status.includes("😪")
+    ? "orange" : isActive ? "#4CAF50" : "#555";
 
-  const bgColor = status.includes("😴") ? "rgba(255,0,0,0.97)"
-    : status.includes("⚠️") || status.includes("😪") ? "rgba(255,152,0,0.97)"
-    : "rgba(0,0,0,0.9)";
+  const bgColor = status.includes("🚨")
+    ? "rgba(255,0,0,0.97)"
+    : status.includes("⚠️") || status.includes("😪")
+    ? "rgba(255,152,0,0.97)"
+    : "rgba(20,20,35,0.97)";
 
   return (
     <div style={{
@@ -216,18 +229,20 @@ export default function SleepDetector({ onSleeping }) {
       border: `3px solid ${borderColor}`,
       width: "175px", transition: "all 0.3s"
     }}>
-      <video ref={videoRef} autoPlay muted style={{
+      <video ref={videoRef} autoPlay muted playsInline style={{
         width: "151px", height: "113px", borderRadius: "8px",
         display: isActive ? "block" : "none",
         transform: "scaleX(-1)"
       }} />
 
       {!isActive && (
-        <div style={{ width: "151px", height: "95px",
+        <div style={{
+          width: "151px", height: "95px",
           display: "flex", alignItems: "center",
-          justifyContent: "center", flexDirection: "column", gap: "5px" }}>
+          justifyContent: "center", flexDirection: "column", gap: "5px"
+        }}>
           <span style={{ fontSize: "40px" }}>😴</span>
-          <span style={{ color: "gray", fontSize: "10px", textAlign: "center" }}>
+          <span style={{ color: "#94a3b8", fontSize: "10px", textAlign: "center" }}>
             {loadingMsg || "AI-powered eye detection"}
           </span>
         </div>
@@ -240,7 +255,8 @@ export default function SleepDetector({ onSleeping }) {
       {isActive && (
         <div style={{
           background: countdown <= 3 ? "#f44336" : "rgba(0,0,0,0.5)",
-          borderRadius: "8px", padding: "5px", marginBottom: "6px"
+          borderRadius: "8px", padding: "5px", marginBottom: "6px",
+          transition: "background 0.3s"
         }}>
           <p style={{ color: "white", margin: 0, fontSize: "11px" }}>
             🔔 Alarm in: <strong>{countdown}s</strong>
@@ -248,15 +264,18 @@ export default function SleepDetector({ onSleeping }) {
         </div>
       )}
 
-      <button onClick={isActive ? stopCamera : startCamera}
+      <button
+        onClick={isActive ? stopCamera : startCamera}
         disabled={!modelsReady && !isActive}
         style={{
           background: !modelsReady && !isActive ? "#666"
             : isActive ? "#f44336" : "#4CAF50",
           color: "white", border: "none", padding: "8px",
-          borderRadius: "6px", cursor: modelsReady || isActive ? "pointer" : "not-allowed",
+          borderRadius: "6px",
+          cursor: modelsReady || isActive ? "pointer" : "not-allowed",
           fontSize: "11px", width: "100%", fontWeight: "bold"
-        }}>
+        }}
+      >
         {!modelsReady && !isActive ? "⏳ Loading AI…"
           : isActive ? "🔴 Stop"
           : "😴 Start Sleep Detector"}
@@ -264,7 +283,7 @@ export default function SleepDetector({ onSleeping }) {
 
       {isActive && (
         <p style={{ color: "#90EE90", fontSize: "9px", margin: "4px 0 0 0" }}>
-          🤖 face-api.js — accurate EAR detection
+          🤖 face-api.js — EAR eye detection
         </p>
       )}
     </div>
