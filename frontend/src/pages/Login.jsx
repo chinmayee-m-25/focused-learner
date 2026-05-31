@@ -118,6 +118,7 @@ export default function Login() {
       const name = signinEmail.split('@')[0];
       localStorage.setItem('userEmail', signinEmail);
       localStorage.setItem('userName', name);
+      localStorage.setItem('currentUser', name);
       await trackUser(name, signinEmail);
       showMsg('Welcome! Redirecting...', 'success');
       setTimeout(() => navigate('/dashboard'), 1000);
